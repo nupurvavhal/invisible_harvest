@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Fruit Analyzer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #fdffe6; padding-top: 50px; 
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .container {
+            position: relative;
+            z-index: 2;
+            padding-left: 14px;
+            padding-right: 14px;
+        }
+        h1 {
+            font-size: clamp(1.5rem, 4.4vw, 2.5rem);
+            line-height: 1.2;
+        }
+        .lead-subtitle {
+            font-size: clamp(0.95rem, 2.8vw, 1.05rem);
+        }
+        .upload-card,
+        .result-card {
+            width: min(100%, 520px);
+        }
+        .result-card { display: none; margin-top: 20px; 
+            z-index: 2;
+        }
+
+        .designimages {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 1;
+            overflow: hidden;
+        }
+
+        .fruit-layer {
+            position: absolute;
+            width: 260px;
+            height: 260px;
+            top: 0;
+            left: 0;
+            object-fit: contain;
+            filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.18));
+            opacity: 0.88;
+            will-change: transform;
+        }
+
+        .fruit-apple {
+            z-index: 2;
+        }
+
+        .fruit-banana {
+            z-index: 3;
+        }
+
+        .fruit-strawberry-two {
+            z-index: 4;
+        }
+
+        .fruit-greenapple {
+            z-index: 2;
+        }
+
+        .fruit-orange {
+            z-index: 3;
+        }
+
+        .fruit-strawberry {
+            z-index: 4;
+        }
+
+        .camera-panel {
+            margin-top: 14px;
+        }
+
+        .camera-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .camera-actions .btn {
+            min-width: 120px;
+        }
+
+        .camera-view {
+            display: none;
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(0, 0, 0, 0.08);
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .camera-view.active {
+            display: block;
+        }
+
+        #cameraVideo,
+        #capturedPreview {
+            width: 100%;
+            height: auto;
+            aspect-ratio: 4 / 3;
+            object-fit: cover;
+            display: block;
+        }
+
+        #capturedPreview {
+            display: none;
+        }
+
+        #cameraStatus {
+            font-size: 0.9rem;
+            color: #4a5a37;
+            margin-top: 6px;
+            min-height: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .fruit-layer {
+                width: 180px;
+                height: 180px;
+                opacity: 0.62;
+            }
+
+            body {
+                padding-top: 24px;
+            }
+
+            .upload-card,
+            .result-card {
+                width: 100%;
+            }
+
+            .camera-actions .btn {
+                flex: 1 1 calc(50% - 8px);
+                min-width: 0;
+            }
+
+            .analyze-btn {
+                width: 100%;
+                margin-top: 8px;
+            }
+
+            #cameraStatus {
+                font-size: 0.85rem;
+            }
+        }
+        
+    </style>
+</head>
+<body>
+    <div class="designimages">
+        <img class="fruit-layer fruit-apple" src="/static/appledesign.png" alt="Apple decoration">
+        <img class="fruit-layer fruit-banana" src="/static/bananadesign.png" alt="Banana decoration">
+        <img class="fruit-layer fruit-strawberry-two" src="/static/strawberrydesign2.png" alt="Strawberry decoration">
+        <img class="fruit-layer fruit-greenapple" src="/static/greenappledesign.png" alt="Green apple decoration">
+        <img class="fruit-layer fruit-orange" src="/static/orangedesign.png" alt="Orange decoration">
+        <img class="fruit-layer fruit-strawberry" src="/static/strawberrydesign.png" alt="Strawberry decoration">
+    </div>
+
+    <div class="container text-center">
+        <h1>AI Fruit Freshness Detector</h1>
+        <p class="text-muted lead-subtitle">Upload or capture an image to check quality</p>
+        
+        <div class="card p-4 mx-auto upload-card">
+            <input type="file" id="imageInput" class="form-control mb-3" accept="image/*" capture="environment">
+            <div class="camera-panel">
+                <div class="camera-actions">
+                    <button id="quickCameraBtn" type="button" class="btn btn-primary btn-sm">Use Phone Camera</button>
+                    <button id="startCameraBtn" type="button" class="btn btn-outline-primary btn-sm">Start Camera</button>
+                    <button id="captureBtn" type="button" class="btn btn-outline-success btn-sm" disabled>Capture</button>
+                    <button id="stopCameraBtn" type="button" class="btn btn-outline-danger btn-sm" disabled>Stop Camera</button>
+                </div>
+                <div id="cameraView" class="camera-view">
+                    <video id="cameraVideo" autoplay playsinline></video>
+                    <img id="capturedPreview" alt="Captured fruit preview">
+                </div>
+                <canvas id="captureCanvas" style="display: none;"></canvas>
+                <div id="cameraStatus"></div>
+            </div>
+            <button onclick="uploadImage()" class="btn btn-secondary analyze-btn">Analyze Fruit</button>
+        </div>
+
+        <div id="resultCard" class="card p-4 mx-auto mt-4 result-card">
+            <h3 id="resFruit"></h3>
+            <p><strong>Status:</strong> <span id="resStatus"></span></p>
+            <p><strong>Confidence:</strong> <span id="resConf"></span></p>
+            <p><strong>Advice:</strong> <span id="resAdvice"></span></p>
+        </div>
+    </div>
+
+
+    <script>
+        let cameraStream = null;
+        let capturedImageBlob = null;
+
+        function supportsLiveCamera() {
+            return Boolean(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        }
+
+        function setCameraStatus(message) {
+            const status = document.getElementById('cameraStatus');
+            status.textContent = message;
+        }
+
+        async function startCamera() {
+            const video = document.getElementById('cameraVideo');
+            const cameraView = document.getElementById('cameraView');
+            const captureBtn = document.getElementById('captureBtn');
+            const stopCameraBtn = document.getElementById('stopCameraBtn');
+            const preview = document.getElementById('capturedPreview');
+
+            if (!supportsLiveCamera()) {
+                setCameraStatus('Live camera preview needs HTTPS. Use Phone Camera instead.');
+                return;
+            }
+
+            try {
+                if (cameraStream) {
+                    cameraStream.getTracks().forEach((track) => track.stop());
+                }
+
+                cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+
+                capturedImageBlob = null;
+                preview.style.display = 'none';
+                video.style.display = 'block';
+                video.srcObject = cameraStream;
+                cameraView.classList.add('active');
+                captureBtn.disabled = false;
+                stopCameraBtn.disabled = false;
+                setCameraStatus('Camera started. Capture a fruit image.');
+            } catch (error) {
+                setCameraStatus('Unable to access camera. Please allow permission.');
+            }
+        }
+
+        function stopCamera() {
+            const video = document.getElementById('cameraVideo');
+            const captureBtn = document.getElementById('captureBtn');
+            const stopCameraBtn = document.getElementById('stopCameraBtn');
+
+            if (cameraStream) {
+                cameraStream.getTracks().forEach((track) => track.stop());
+                cameraStream = null;
+            }
+
+            video.srcObject = null;
+            captureBtn.disabled = true;
+            stopCameraBtn.disabled = true;
+        }
+
+        function captureFromCamera() {
+            const video = document.getElementById('cameraVideo');
+            const preview = document.getElementById('capturedPreview');
+            const canvas = document.getElementById('captureCanvas');
+
+            if (!cameraStream || video.videoWidth === 0 || video.videoHeight === 0) {
+                setCameraStatus('Start the camera before capturing.');
+                return;
+            }
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob((blob) => {
+                if (!blob) {
+                    setCameraStatus('Could not capture image. Try again.');
+                    return;
+                }
+
+                capturedImageBlob = blob;
+                preview.src = URL.createObjectURL(blob);
+                preview.style.display = 'block';
+                video.style.display = 'none';
+                stopCamera();
+                setCameraStatus('Captured image ready. Click Analyze Fruit.');
+            }, 'image/jpeg', 0.95);
+        }
+
+        function initFruitMotion() {
+            const fruits = Array.from(document.querySelectorAll('.fruit-layer'));
+            if (fruits.length === 0) return;
+
+            let fruitStates = [];
+            let animationFrameId = null;
+            let lastTime = 0;
+            let entranceStart = 0;
+            let isEntering = true;
+            const entranceDuration = 1800;
+            const collisionPadding = 10;
+            const bounceBoost = 1.04;
+
+            const desktopTargets = [
+                { x: 0.05, y: 0.08 },
+                { x: 0.34, y: 0.14 },
+                { x: 0.74, y: 0.1 },
+                { x: 0.12, y: 0.56 },
+                { x: 0.5, y: 0.48 },
+                { x: 0.79, y: 0.58 }
+            ];
+
+            const mobileTargets = [
+                { x: 0.05, y: 0.08 },
+                { x: 0.54, y: 0.12 },
+                { x: 0.12, y: 0.37 },
+                { x: 0.6, y: 0.34 },
+                { x: 0.08, y: 0.62 },
+                { x: 0.56, y: 0.62 }
+            ];
+
+            const motionSeeds = [
+                { vx: 24, vy: -16, rotation: -10, spin: 0.35 },
+                { vx: -18, vy: -14, rotation: 11, spin: -0.32 },
+                { vx: 20, vy: 12, rotation: -7, spin: 0.28 },
+                { vx: -16, vy: 15, rotation: 9, spin: -0.24 },
+                { vx: 14, vy: -18, rotation: -8, spin: 0.3 },
+                { vx: -22, vy: 10, rotation: 7, spin: -0.27 }
+            ];
+
+            const easeOutCubic = (value) => 1 - Math.pow(1 - value, 3);
+
+            function getFruitSize(element) {
+                const rect = element.getBoundingClientRect();
+                return {
+                    width: rect.width || 260,
+                    height: rect.height || 260
+                };
+            }
+
+            function clamp(value, min, max) {
+                return Math.min(Math.max(value, min), max);
+            }
+
+            function buildStates() {
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                const targetSet = viewportWidth <= 900 ? mobileTargets : desktopTargets;
+
+                fruitStates = fruits.map((fruit, index) => {
+                    const size = getFruitSize(fruit);
+                    const target = targetSet[index];
+                    const seed = motionSeeds[index];
+                    const targetX = clamp(target.x * viewportWidth, 0, viewportWidth - size.width);
+                    const targetY = clamp(target.y * viewportHeight, 0, viewportHeight - size.height);
+
+                    return {
+                        element: fruit,
+                        width: size.width,
+                        height: size.height,
+                        x: targetX,
+                        y: viewportHeight + 80 + index * 50,
+                        targetX,
+                        targetY,
+                        startX: targetX + (index % 2 === 0 ? -40 : 40),
+                        startY: viewportHeight + 80 + index * 50,
+                        vx: seed.vx,
+                        vy: seed.vy,
+                        rotation: seed.rotation,
+                        spin: seed.spin,
+                        bumpUntil: 0
+                    };
+                });
+            }
+
+            function keepInside(state) {
+                const maxX = Math.max(0, window.innerWidth - state.width);
+                const maxY = Math.max(0, window.innerHeight - state.height);
+
+                if (state.x <= 0) {
+                    state.x = 0;
+                    state.vx = Math.abs(state.vx);
+                } else if (state.x >= maxX) {
+                    state.x = maxX;
+                    state.vx = -Math.abs(state.vx);
+                }
+
+                if (state.y <= 0) {
+                    state.y = 0;
+                    state.vy = Math.abs(state.vy);
+                } else if (state.y >= maxY) {
+                    state.y = maxY;
+                    state.vy = -Math.abs(state.vy);
+                }
+            }
+
+            function resolveCollisions(now) {
+                for (let firstIndex = 0; firstIndex < fruitStates.length; firstIndex += 1) {
+                    for (let secondIndex = firstIndex + 1; secondIndex < fruitStates.length; secondIndex += 1) {
+                        const first = fruitStates[firstIndex];
+                        const second = fruitStates[secondIndex];
+                        const firstCenterX = first.x + first.width / 2;
+                        const firstCenterY = first.y + first.height / 2;
+                        const secondCenterX = second.x + second.width / 2;
+                        const secondCenterY = second.y + second.height / 2;
+                        const deltaX = secondCenterX - firstCenterX;
+                        const deltaY = secondCenterY - firstCenterY;
+                        const distance = Math.hypot(deltaX, deltaY) || 0.001;
+                        const minimumDistance = (Math.min(first.width, first.height) + Math.min(second.width, second.height)) / 2 - collisionPadding;
+
+                        if (distance >= minimumDistance) {
+                            continue;
+                        }
+
+                        const normalX = deltaX / distance;
+                        const normalY = deltaY / distance;
+                        const overlap = minimumDistance - distance;
+                        const pushX = normalX * overlap * 0.5;
+                        const pushY = normalY * overlap * 0.5;
+
+                        first.x -= pushX;
+                        first.y -= pushY;
+                        second.x += pushX;
+                        second.y += pushY;
+
+                        const relativeVelocityX = first.vx - second.vx;
+                        const relativeVelocityY = first.vy - second.vy;
+                        const normalVelocity = relativeVelocityX * normalX + relativeVelocityY * normalY;
+
+                        if (normalVelocity > 0) {
+                            continue;
+                        }
+
+                        const impulse = -normalVelocity * bounceBoost;
+                        first.vx += impulse * normalX;
+                        first.vy += impulse * normalY;
+                        second.vx -= impulse * normalX;
+                        second.vy -= impulse * normalY;
+                        first.bumpUntil = now + 220;
+                        second.bumpUntil = now + 220;
+                    }
+                }
+            }
+
+            function renderFruit(state, now) {
+                const bumpProgress = Math.max(0, state.bumpUntil - now) / 220;
+                const bumpScale = 1 + bumpProgress * 0.08;
+                const wobble = Math.sin(now / 420 + state.rotation) * 1.8;
+                const angle = state.rotation + wobble + bumpProgress * 7;
+
+                state.element.style.transform = `translate3d(${state.x}px, ${state.y}px, 0) rotate(${angle}deg) scale(${bumpScale})`;
+            }
+
+            function animate(now) {
+                if (!entranceStart) {
+                    entranceStart = now;
+                }
+
+                const deltaSeconds = lastTime ? (now - lastTime) / 1000 : 0;
+                lastTime = now;
+
+                if (isEntering) {
+                    const progress = Math.min((now - entranceStart) / entranceDuration, 1);
+                    const eased = easeOutCubic(progress);
+
+                    fruitStates.forEach((state) => {
+                        state.x = state.startX + (state.targetX - state.startX) * eased;
+                        state.y = state.startY + (state.targetY - state.startY) * eased;
+                        renderFruit(state, now);
+                    });
+
+                    if (progress >= 1) {
+                        isEntering = false;
+                    }
+                } else {
+                    fruitStates.forEach((state) => {
+                        state.x += state.vx * deltaSeconds;
+                        state.y += state.vy * deltaSeconds;
+                        keepInside(state);
+                    });
+
+                    resolveCollisions(now);
+
+                    fruitStates.forEach((state) => {
+                        keepInside(state);
+                        renderFruit(state, now);
+                    });
+                }
+
+                animationFrameId = window.requestAnimationFrame(animate);
+            }
+
+            function resetMotion() {
+                if (animationFrameId) {
+                    window.cancelAnimationFrame(animationFrameId);
+                }
+
+                lastTime = 0;
+                entranceStart = 0;
+                isEntering = true;
+                buildStates();
+                animationFrameId = window.requestAnimationFrame(animate);
+            }
+
+            window.addEventListener('resize', resetMotion);
+            resetMotion();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initFruitMotion();
+
+            const quickCameraBtn = document.getElementById('quickCameraBtn');
+            const startCameraBtn = document.getElementById('startCameraBtn');
+            const imageInput = document.getElementById('imageInput');
+
+            quickCameraBtn.addEventListener('click', () => {
+                capturedImageBlob = null;
+                imageInput.click();
+            });
+
+            document.getElementById('startCameraBtn').addEventListener('click', startCamera);
+            document.getElementById('captureBtn').addEventListener('click', captureFromCamera);
+            document.getElementById('stopCameraBtn').addEventListener('click', () => {
+                stopCamera();
+                setCameraStatus('Camera stopped.');
+            });
+
+            imageInput.addEventListener('change', () => {
+                capturedImageBlob = null;
+                document.getElementById('capturedPreview').style.display = 'none';
+                document.getElementById('cameraVideo').style.display = 'block';
+                setCameraStatus('');
+            });
+
+            if (!supportsLiveCamera()) {
+                startCameraBtn.disabled = true;
+                setCameraStatus('Live preview is unavailable in this context. Tap Use Phone Camera.');
+            }
+        });
+
+        async function uploadImage() {
+            const fileInput = document.getElementById('imageInput');
+            const formData = new FormData();
+
+            if (fileInput.files.length > 0) {
+                formData.append('file', fileInput.files[0]);
+            } else if (capturedImageBlob) {
+                formData.append('file', capturedImageBlob, 'captured-fruit.jpg');
+            } else {
+                return alert("Select or capture an image first!");
+            }
+
+            const response = await fetch('/predict', { method: 'POST', body: formData });
+            const data = await response.json();
+
+            document.getElementById('resultCard').style.display = 'block';
+            document.getElementById('resFruit').innerText = data.fruit;
+            document.getElementById('resStatus').innerText = data.status;
+            document.getElementById('resConf').innerText = data.confidence;
+            document.getElementById('resAdvice').innerText = data.advice;
+        }
+    </script>
+</body>
+</html>
