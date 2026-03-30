@@ -30,6 +30,23 @@
             z-index: 2;
         }
 
+        .result-preview {
+            width: 100%;
+            max-width: 320px;
+            margin: 0 auto 14px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(0, 0, 0, 0.08);
+            background: #ffffff;
+        }
+
+        .result-preview img {
+            width: 100%;
+            height: auto;
+            display: block;
+            object-fit: cover;
+        }
+
         .designimages {
             position: fixed;
             inset: 0;
@@ -194,6 +211,9 @@
         </div>
 
         <div id="resultCard" class="card p-4 mx-auto mt-4 result-card">
+            <div id="resultPreview" class="result-preview" style="display: none;">
+                <img id="resImage" alt="Uploaded fruit image">
+            </div>
             <h3 id="resFruit"></h3>
             <p><strong>Status:</strong> <span id="resStatus"></span></p>
             <p><strong>Confidence:</strong> <span id="resConf"></span></p>
@@ -205,6 +225,15 @@
     <script>
         let cameraStream = null;
         let capturedImageBlob = null;
+
+        function blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('Unable to read selected image.'));
+                reader.readAsDataURL(blob);
+            });
+        }
 
         function supportsLiveCamera() {
             return Boolean(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -548,11 +577,14 @@
         async function uploadImage() {
             const fileInput = document.getElementById('imageInput');
             const formData = new FormData();
+            let imageSource = null;
 
             if (fileInput.files.length > 0) {
                 formData.append('file', fileInput.files[0]);
+                imageSource = fileInput.files[0];
             } else if (capturedImageBlob) {
                 formData.append('file', capturedImageBlob, 'captured-fruit.jpg');
+                imageSource = capturedImageBlob;
             } else {
                 return alert("Select or capture an image first!");
             }
@@ -561,6 +593,13 @@
             const data = await response.json();
 
             document.getElementById('resultCard').style.display = 'block';
+            const resultPreview = document.getElementById('resultPreview');
+            const resultImage = document.getElementById('resImage');
+
+            const previewSrc = await blobToDataUrl(imageSource);
+            resultImage.src = previewSrc;
+            resultPreview.style.display = 'block';
+
             document.getElementById('resFruit').innerText = data.fruit;
             document.getElementById('resStatus').innerText = data.status;
             document.getElementById('resConf').innerText = data.confidence;
