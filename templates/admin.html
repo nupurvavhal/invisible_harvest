@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard - Fruit Analyzer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #f5f8fb;
+        }
+        .topbar {
+            background: #17395f;
+            color: #fff;
+            padding: 14px 0;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+        }
+        .panel {
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+            border: 0;
+        }
+        .thumb {
+            width: 92px;
+            height: 92px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #d7e0ec;
+        }
+        .table-wrap {
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="container d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h4 class="mb-0">Admin Report Panel</h4>
+            <div class="d-flex align-items-center gap-2">
+                <span>Signed in as <strong>{{ admin_name }}</strong></span>
+                <a class="btn btn-light btn-sm" href="/">User View</a>
+                <a class="btn btn-outline-light btn-sm" href="/logout">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container py-4">
+        <div class="card panel p-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0">Uploaded Image Analysis History</h6>
+                <span class="badge text-bg-secondary">{{ rows|length }} records</span>
+            </div>
+            <div class="table-wrap">
+                <table class="table table-striped align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>User</th>
+                            <th>Fruit</th>
+                            <th>Status</th>
+                            <th>Confidence</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                            <tr>
+                                <td>
+                                    {% if row.image_url %}
+                                        <img src="{{ row.image_url }}" alt="Uploaded fruit" class="thumb">
+                                    {% else %}
+                                        <span class="text-muted">No image</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ row.user_email }}</td>
+                                <td>{{ row.fruit }}</td>
+                                <td>{{ row.status }}</td>
+                                <td>{{ row.confidence }}</td>
+                                <td>{{ row.created_at }}</td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">No uploads found yet.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
