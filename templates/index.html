@@ -221,6 +221,7 @@
             <h3 id="resFruit"></h3>
             <p><strong>Status:</strong> <span id="resStatus"></span></p>
             <p><strong>Confidence:</strong> <span id="resConf"></span></p>
+            <p><strong>Shelf Life:</strong> <span id="resShelfLife"></span></p>
             <p><strong>Advice:</strong> <span id="resAdvice"></span></p>
         </div>
     </div>
@@ -607,6 +608,7 @@
             document.getElementById('resFruit').innerText = data.fruit;
             document.getElementById('resStatus').innerText = data.status;
             document.getElementById('resConf').innerText = data.confidence;
+            document.getElementById('resShelfLife').innerText = data.shelf_life || '-';
             document.getElementById('resAdvice').innerText = data.advice;
         }
     </script>
