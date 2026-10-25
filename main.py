@@ -14,7 +14,7 @@ import secrets
 import hashlib
 import binascii
 from pymongo import DESCENDING, MongoClient
-from pymongo.errors import DuplicateKeyError, PyMongoError
+from pymongo.errors import ConfigurationError, DuplicateKeyError, PyMongoError, ServerSelectionTimeoutError
 from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI()
@@ -46,14 +46,69 @@ def load_env_file(env_path: Path):
 
 load_env_file(BASE_DIR / ".env")
 
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://127.0.0.1:27017")
+DEFAULT_LOCAL_MONGODB_URI = "mongodb://127.0.0.1:27017"
+MONGODB_URI = os.getenv("MONGODB_URI", DEFAULT_LOCAL_MONGODB_URI)
 MONGODB_DB = os.getenv("MONGODB_DB", "fruit_analyzer")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "change-this-secret")
+MEMORY_USERS = {}
+MEMORY_PREDICTIONS = []
 
-mongo_client = MongoClient(MONGODB_URI)
-db = mongo_client[MONGODB_DB]
-users_collection = db["users"]
-predictions_collection = db["predictions"]
+
+def create_mongo_client(uri: str):
+    if not uri:
+        return None
+
+    try:
+        client = MongoClient(uri, serverSelectionTimeoutMS=2000)
+        client.admin.command("ping")
+        return client
+    except (ConfigurationError, ServerSelectionTimeoutError, PyMongoError, OSError, ValueError) as exc:
+        print(f"MongoDB unavailable at {uri}: {exc}")
+        return None
+
+
+mongo_client = create_mongo_client(MONGODB_URI)
+if mongo_client is None and MONGODB_URI != DEFAULT_LOCAL_MONGODB_URI:
+    mongo_client = create_mongo_client(DEFAULT_LOCAL_MONGODB_URI)
+    if mongo_client is not None:
+        MONGODB_URI = DEFAULT_LOCAL_MONGODB_URI
+
+if mongo_client is None:
+    db = None
+    users_collection = None
+    predictions_collection = None
+    print("MongoDB not available; using in-memory storage for local testing.")
+else:
+    db = mongo_client[MONGODB_DB]
+    users_collection = db["users"]
+    predictions_collection = db["predictions"]
+
+
+def find_user(email: str):
+    if users_collection is not None:
+        return users_collection.find_one({"email": email})
+    return MEMORY_USERS.get(email)
+
+
+def insert_user(user_data: dict):
+    if users_collection is not None:
+        return users_collection.insert_one(user_data)
+    MEMORY_USERS[user_data["email"]] = user_data
+    return None
+
+
+def save_prediction(data: dict):
+    if predictions_collection is not None:
+        return predictions_collection.insert_one(data)
+    MEMORY_PREDICTIONS.insert(0, data)
+    return None
+
+
+def list_predictions(limit: int = 300):
+    if predictions_collection is not None:
+        return list(predictions_collection.find().sort("created_at", DESCENDING).limit(limit))
+    return sorted(MEMORY_PREDICTIONS, key=lambda item: item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)[:limit]
+
 
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
@@ -102,6 +157,19 @@ def preprocess_image(image_bytes: bytes):
 
 @app.on_event("startup")
 async def setup_database():
+    if users_collection is None:
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@fruitanalyzer.local").strip().lower()
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+        if admin_email not in MEMORY_USERS:
+            MEMORY_USERS[admin_email] = {
+                "name": "Administrator",
+                "email": admin_email,
+                "password": hash_password(admin_password),
+                "role": "admin",
+                "created_at": datetime.now(timezone.utc),
+            }
+        return
+
     try:
         users_collection.create_index("email", unique=True)
         predictions_collection.create_index([("created_at", DESCENDING)])
@@ -151,7 +219,7 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
     selected_role = "admin" if role == "admin" else "user"
 
     try:
-        user = users_collection.find_one({"email": normalized_email})
+        user = find_user(normalized_email)
     except PyMongoError:
         return templates.TemplateResponse(
             "login.html",
@@ -203,16 +271,21 @@ async def register(request: Request, name: str = Form(...), email: str = Form(..
             status_code=400,
         )
 
+    user_payload = {
+        "name": normalized_name,
+        "email": normalized_email,
+        "password": hash_password(password),
+        "role": "user",
+        "created_at": datetime.now(timezone.utc),
+    }
+
     try:
-        users_collection.insert_one(
-            {
-                "name": normalized_name,
-                "email": normalized_email,
-                "password": hash_password(password),
-                "role": "user",
-                "created_at": datetime.now(timezone.utc),
-            }
-        )
+        if users_collection is not None:
+            users_collection.insert_one(user_payload)
+        else:
+            if normalized_email in MEMORY_USERS:
+                raise DuplicateKeyError("Duplicate email")
+            MEMORY_USERS[normalized_email] = user_payload
     except DuplicateKeyError:
         return templates.TemplateResponse(
             "register.html",
@@ -272,18 +345,18 @@ async def predict(request: Request, file: UploadFile = File(...)):
         "advice": "Keep in fridge." if status == "Fresh" else "Compost it.",
     }
 
+    prediction_record = {
+        "user_email": user.get("email", ""),
+        "user_name": user.get("name", "User"),
+        "fruit": fruit,
+        "status": status,
+        "confidence": confidence,
+        "image_url": image_url,
+        "created_at": datetime.now(timezone.utc),
+    }
+
     try:
-        predictions_collection.insert_one(
-            {
-                "user_email": user.get("email", ""),
-                "user_name": user.get("name", "User"),
-                "fruit": fruit,
-                "status": status,
-                "confidence": confidence,
-                "image_url": image_url,
-                "created_at": datetime.now(timezone.utc),
-            }
-        )
+        save_prediction(prediction_record)
     except PyMongoError as error:
         print(f"Could not save prediction record: {error}")
 
@@ -300,8 +373,7 @@ async def admin_dashboard(request: Request):
 
     rows = []
     try:
-        cursor = predictions_collection.find().sort("created_at", DESCENDING).limit(300)
-        for item in cursor:
+        for item in list_predictions(300):
             created_at = item.get("created_at")
             if isinstance(created_at, datetime):
                 created_at_text = created_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
